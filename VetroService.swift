@@ -10,6 +10,10 @@ struct TVApp: Identifiable, Codable {
     let show: Bool?
     let disabled: Bool?
     let iconPath: String?
+    let area: String?
+    let system: Bool?
+    let removable: Bool?
+    let role: String?
 }
 
 struct AppsResponse: Codable {
@@ -118,10 +122,53 @@ final class VetroService: ObservableObject {
             guard let data = data, error == nil else { return }
             do {
                 let res = try JSONDecoder().decode(AppsResponse.self, from: data)
-                let visible = res.apps.filter { ($0.show ?? false) && !($0.disabled ?? false) }
-                    .sorted { ($0.name ?? $0.appId).localizedCaseInsensitiveCompare($1.name ?? $1.appId) == .orderedAscending }
+                
+                // Keep only important, real user applications (exclude internal services, background components, and system processes)
+                let important = res.apps.filter { app in
+                    let isVisible = (app.show ?? false) && !(app.disabled ?? false)
+                    guard isVisible else { return false }
+                    
+                    let id = app.appId.lowercased()
+                    let name = (app.name ?? "").lowercased()
+                    
+                    // Filter out known internal diagnostic / system helpers
+                    if id.hasPrefix("com.samsung.tv.coba") ||
+                       id.contains("service") ||
+                       id.contains("oobe") ||
+                       id.contains("csaccount") ||
+                       id.contains("csbilling") ||
+                       id.contains("diagnosis") ||
+                       id.contains("safcommon") ||
+                       id.contains("qsymphony") ||
+                       id.contains("plugin") ||
+                       id.contains("indicator") ||
+                       name.contains("emanual") ||
+                       name.contains("guide") && id.contains("25emanual") ||
+                       name.contains("promotion") {
+                        return false
+                    }
+                    
+                    // Keep media area apps or removable user installed apps
+                    return app.area == "media" || (app.removable == true && app.system == false)
+                }
+                
+                // Deduplicate by display name
+                var uniqueApps: [TVApp] = []
+                var seenNames = Set<String>()
+                for app in important {
+                    let display = app.name ?? app.appId
+                    if !seenNames.contains(display) {
+                        seenNames.insert(display)
+                        uniqueApps.append(app)
+                    }
+                }
+                
+                let sorted = uniqueApps.sorted {
+                    ($0.name ?? $0.appId).localizedCaseInsensitiveCompare($1.name ?? $1.appId) == .orderedAscending
+                }
+                
                 DispatchQueue.main.async {
-                    self?.apps = visible
+                    self?.apps = sorted
                     self?.isConnected = true
                 }
             } catch {
