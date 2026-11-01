@@ -52,3 +52,4 @@ Because this app is written in native Swift & SwiftUI, building an iOS `.ipa` bi
    - Connect your iPhone via USB or Wi-Fi.
    - Drag & drop `Dawood67_remote.ipa` into Sideloadly.
    - Click **Start** to sign with your Apple ID and install on your phone.
+
