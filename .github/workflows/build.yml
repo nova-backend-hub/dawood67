@@ -2,7 +2,7 @@ name: Build WinDock iOS IPA
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "windock" ]
   workflow_dispatch:
 
 jobs:
