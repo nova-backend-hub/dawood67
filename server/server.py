@@ -100,21 +100,29 @@ def save_apps(apps_list):
         print(f"[Error saving config]: {e}")
         return False
 
-def get_local_ip():
+def get_all_ips():
+    ips = []
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        hostname = socket.gethostname()
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            if not ip.startswith('127.'):
+                ips.append(ip)
     except Exception:
-        return '127.0.0.1'
+        pass
+    if not ips:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ips.append(s.getsockname()[0])
+            s.close()
+        except Exception:
+            ips.append('127.0.0.1')
+    return ips
 
 def launch_windows_app(command):
     print(f"\n[LAUNCHING] Running command: {command}")
     try:
         if sys.platform == 'win32':
-            # Run via Windows shell in background without blocking
             subprocess.Popen(f'cmd.exe /c "{command}"', shell=True)
             return True, f"Successfully executed: {command}"
         else:
@@ -129,7 +137,6 @@ class WinDockHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=WEB_DIR, **kwargs)
 
     def end_headers(self):
-        # Enable CORS for iOS app & external clients
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
@@ -150,7 +157,7 @@ class WinDockHandler(http.server.SimpleHTTPRequestHandler):
             status_data = {
                 "status": "online",
                 "hostname": socket.gethostname(),
-                "ip": get_local_ip(),
+                "ips": get_all_ips(),
                 "port": PORT,
                 "os": sys.platform,
                 "time": time.strftime("%Y-%m-%d %H:%M:%S")
@@ -166,12 +173,10 @@ class WinDockHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"apps": apps}).encode('utf-8'))
             return
             
-        # Default static file serving from web directory
         return super().do_GET()
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        
         content_length = int(self.headers.get('Content-Length', 0))
         post_body = self.rfile.read(content_length) if content_length > 0 else b'{}'
         
@@ -185,7 +190,6 @@ class WinDockHandler(http.server.SimpleHTTPRequestHandler):
             app_id = body.get('id')
             
             if not cmd and app_id:
-                # Find by app ID
                 apps = load_apps()
                 for app in apps:
                     if app.get('id') == app_id:
@@ -227,23 +231,28 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
 
 def main():
-    local_ip = get_local_ip()
+    all_ips = get_all_ips()
     server_address = ('0.0.0.0', PORT)
     
-    print("\n" + "="*60)
+    print("\n" + "="*65)
     print("      WinDock Bridge Server - Windows Application Launcher")
-    print("="*60)
-    print(f"  PC Hostname  : {socket.gethostname()}")
-    print(f"  Local LAN IP : {local_ip}")
-    print(f"  Port         : {PORT}")
-    print(f"  Server URL   : http://{local_ip}:{PORT}")
-    print("="*60)
-    print("\n[+] Instructions for iPhone:")
-    print(f"  1. Ensure iPhone is on the SAME Wi-Fi network as this PC.")
-    print(f"  2. In the WinDock iOS App, enter Server IP: {local_ip} (Port: {PORT}).")
-    print(f"  3. Or open Safari on iPhone and browse to: http://{local_ip}:{PORT}")
-    print("     and tap 'Share -> Add to Home Screen' for instant full-screen app!")
-    print("\n[+] Server is listening for incoming launch requests... Press Ctrl+C to stop.\n")
+    print("="*65)
+    print(f"  PC Hostname : {socket.gethostname()}")
+    print(f"  Port        : {PORT}")
+    print("\n  Available Connection Addresses:")
+    for ip in all_ips:
+        if ip.startswith("172.20.10."):
+            print(f"   * [USB CABLE]   : http://{ip}:{PORT}  <-- USE THIS FOR CABLE!")
+        else:
+            print(f"   * [Wi-Fi/LAN]   : http://{ip}:{PORT}")
+    print("="*65)
+    print("\n[🔌 HOW TO CONNECT VIA CABLE (ZERO WI-FI REQUIRED)]:")
+    print("  1. Plug your iPhone into this Windows PC with the USB Cable.")
+    print("  2. On iPhone: Go to Settings -> Personal Hotspot -> Turn ON 'Allow Others to Join'.")
+    print("     (If prompted, select 'USB Only'. Wi-Fi can remain completely OFF!)")
+    print("  3. On iPhone: Open Safari and type: http://172.20.10.2:5050 (or the USB IP above).")
+    print("  4. Tap Share -> 'Add to Home Screen' for instant full-screen app dock over cable!")
+    print("\n[+] Server listening for launch requests... Press Ctrl+C to stop.\n")
 
     httpd = ThreadedHTTPServer(server_address, WinDockHandler)
     try:
